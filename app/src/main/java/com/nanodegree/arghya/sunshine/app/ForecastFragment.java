@@ -5,9 +5,11 @@ package com.nanodegree.arghya.sunshine.app;
  */
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.text.format.Time;
@@ -18,8 +20,10 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -45,6 +49,7 @@ public class ForecastFragment extends Fragment {
 
     ArrayAdapter<String> mAdapter;
     ListView listView;
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
@@ -65,6 +70,18 @@ public class ForecastFragment extends Fragment {
                 list);
 
         listView.setAdapter(mAdapter);
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+
+                String forecast = mAdapter.getItem(position).toString();
+
+                //Toast.makeText(getActivity(),str,Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(getActivity(), DetailActivity.class)
+                        .putExtra(Intent.EXTRA_TEXT, forecast);
+                startActivity(intent);
+            }
+        });
 
         return rootView;
     }
@@ -82,13 +99,26 @@ public class ForecastFragment extends Fragment {
         inflater.inflate(R.menu.forecastfragment, menu);
     }
 
+    private void updateWeather() {
+        FetchWeatherTask weatherTask = new FetchWeatherTask();
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String defaultLocation = sharedPref.getString(getString(R.string.pref_location_key),
+                getString(R.string.pref_location_default));
+        weatherTask.execute(defaultLocation);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
+    }
+
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
 
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-            FetchWeatherTask weatherTask = new FetchWeatherTask();
-            weatherTask.execute("94043");
+            updateWeather();
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -108,8 +138,14 @@ public class ForecastFragment extends Fragment {
         /**
          * Prepare the weather high/lows for presentation.
          */
-        private String formatHighLows(double high, double low) {
+        private String formatHighLows(double high, double low, String unitType) {
             // For presentation, assume the user doesn't care about tenths of a degree.
+            if (unitType.equals(getString(R.string.pref_units_imperial))) {
+                high = (high * 1.8) + 32;
+                low = (low * 1.8) + 32;
+            } else if (!unitType.equals(getString(R.string.pref_units_metric))) {
+                Log.d(LOG_TAG, "Unit type not found: " + unitType);
+            }
             long roundedHigh = Math.round(high);
             long roundedLow = Math.round(low);
 
@@ -156,6 +192,18 @@ public class ForecastFragment extends Fragment {
             dayTime = new Time();
 
             String[] resultStrs = new String[numDays];
+
+            // Data is fetched in Celsius by default.
+            // If user prefers to see in Fahrenheit, convert the values here.
+            // We do this rather than fetching in Fahrenheit so that the user can
+            // change this option without us having to re-fetch the data once
+            // we start storing the values in a database.
+            SharedPreferences sharedPrefs =
+                    PreferenceManager.getDefaultSharedPreferences(getActivity());
+            String unitType = sharedPrefs.getString(
+                    getString(R.string.pref_units_key),
+                    getString(R.string.pref_units_metric));
+
             for (int i = 0; i < weatherArray.length(); i++) {
                 // For now, using the format "Day, description, hi/low"
                 String day;
@@ -183,7 +231,7 @@ public class ForecastFragment extends Fragment {
                 double high = temperatureObject.getDouble(OWM_MAX);
                 double low = temperatureObject.getDouble(OWM_MIN);
 
-                highAndLow = formatHighLows(high, low);
+                highAndLow = formatHighLows(high, low, unitType);
                 resultStrs[i] = day + " - " + description + " - " + highAndLow;
             }
 
@@ -232,7 +280,7 @@ public class ForecastFragment extends Fragment {
 
                 URL url = new URL(uriOpenWeather.toString());
 
-               // Log.v(LOG_TAG, "Built URI " + uriOpenWeather.toString());
+                // Log.v(LOG_TAG, "Built URI " + uriOpenWeather.toString());
 
                 // Create the request to OpenWeatherMap, and open the connection
                 urlConnection = (HttpURLConnection) url.openConnection();
@@ -261,7 +309,7 @@ public class ForecastFragment extends Fragment {
                     return null;
                 }
                 forecastJsonStr = buffer.toString();
-               // Log.v(LOG_TAG, "Forecast JSON String: " + forecastJsonStr);
+                // Log.v(LOG_TAG, "Forecast JSON String: " + forecastJsonStr);
 
             } catch (IOException e) {
                 //Log.e(LOG_TAG, "Error ", e);
@@ -296,14 +344,13 @@ public class ForecastFragment extends Fragment {
         @Override
         protected void onPostExecute(String[] strings) {
 
-            if(strings != null)
-            {
-                mAdapter.clear();
-                for(String result : strings)
-                mAdapter.add(result);
+                if (strings != null) {
+                    mAdapter.clear();
+                    for (String result : strings)
+                        mAdapter.add(result);
+                }
             }
         }
+
+
     }
-
-
-}
